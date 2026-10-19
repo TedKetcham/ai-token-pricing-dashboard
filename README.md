@@ -1,6 +1,6 @@
 # AI Token Pricing Intelligence Dashboard
 
-**MIS Group Assignment | AI-Powered Business Decision Support**
+**MIS 556 Group 11 - Group Assignment 1 | AI-Powered Business Decision Support**
 
 **[Launch the Live Dashboard](https://ai-token-pricing-dashboard.streamlit.app/)** | **[View GitHub Repository](https://github.com/jonathonglee/ai-token-pricing-dashboard)**
 
