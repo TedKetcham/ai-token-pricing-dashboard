@@ -1,0 +1,7 @@
+{
+  "proposals": [],
+  "errors": [
+    "OPENAI_API_KEY GitHub Actions secret not set; documents fetched but price extraction skipped."
+  ],
+  "human_approval_required": true
+}
