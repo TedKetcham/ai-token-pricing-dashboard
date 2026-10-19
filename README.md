@@ -1,51 +1,136 @@
-# AI Token Pricing Intelligence — MIS Group Assignment
+# AI Token Pricing Intelligence Dashboard
 
-A working interactive Streamlit dashboard comparing standard paid **text token API pricing** across OpenAI, Google, and Anthropic. Intended stakeholder: a business choosing a model provider and budgeting API usage.
+**MIS Group Assignment | AI-Powered Business Decision Support**
 
-## Features
-- Provider filters and interactive token-based monthly cost comparisons.
-- Procurement scenario and savings relative to a chosen baseline.
-- **Working RAG**: fetch official pricing pages, chunk retrieved text, rank excerpts by query relevance, ask OpenAI to answer using only retrieved evidence, display citations and timestamps.
-- **Assisted price verification**: fetch three official sources, use an LLM to propose candidate prices, show evidence and require human approval before writing the approved CSV.
-- Daily GitHub Action fetches source pages and writes a **pending review report**; it does not silently change approved prices. If an API key is configured as a GitHub Actions secret, the scheduled job also proposes price updates.
-- Source register, export, and real historical snapshots (when approved updates are recorded).
+**[Launch the Live Dashboard](https://ai-token-pricing-dashboard.streamlit.app/)** | **[View GitHub Repository](https://github.com/jonathonglee/ai-token-pricing-dashboard)**
 
-## Run on Windows
-Open PowerShell inside the extracted folder containing `app.py`:
+## Project Overview
+
+AI companies offer different models with different pricing structures, making it difficult for businesses to estimate costs and compare providers. Our project addresses this challenge through an interactive, AI-powered dashboard that compares standard text-generation API token pricing across selected models from OpenAI, Google, and Anthropic.
+
+### Business Question
+
+**How can businesses compare AI model API costs, estimate spending under different usage scenarios, and use trustworthy research to support vendor selection?**
+
+### Target Stakeholders
+
+- **IT and AI project managers:** Evaluate API options for proposed applications.
+- **Financial analysts:** Estimate monthly operating expenses and potential savings.
+- **Procurement teams:** Compare providers using transparent pricing assumptions.
+- **Business decision-makers:** Explore trade-offs before selecting an AI model.
+
+## Key Features
+
+### 1. Interactive Pricing Comparison
+
+Users can filter AI providers and compare model pricing based on:
+
+- Monthly API request volume
+- Average input tokens per request
+- Average output tokens per request
+- Standard input and output token rates
+
+The dashboard calculates estimated monthly costs and identifies the lowest-cost option within the selected dataset.
+
+### 2. Business Case Analysis
+
+Users can select a baseline model and compare potential monthly savings from switching to alternatives. The dashboard also explains why pricing alone should not determine the final vendor decision.
+
+### 3. Retrieval-Augmented Generation (RAG) Research Assistant
+
+The AI-powered research assistant answers pricing questions using retrieved excerpts from official provider documentation alongside the dashboard's stored pricing data.
+
+The workflow consists of:
+
+1. Retrieve official pricing documents.
+2. Divide retrieved text into searchable passages.
+3. Rank passages based on relevance to the user's question.
+4. Provide relevant evidence and stored pricing data to an OpenAI model.
+5. Generate an analytical response with supporting links and source timestamps.
+
+The assistant identifies limitations when retrieved evidence does not independently substantiate a stored price.
+
+### 4. Official Source Verification
+
+The dashboard retrieves documentation from:
+
+- [OpenAI API Pricing](https://developers.openai.com/api/docs/pricing)
+- [Google Gemini API Pricing](https://ai.google.dev/gemini-api/docs/pricing)
+- [Anthropic Claude Pricing](https://platform.claude.com/docs/en/about-claude/pricing)
+
+An LLM-assisted extraction feature can propose candidate pricing updates. Proposed changes require human verification and approval before modifying the approved dataset.
+
+### 5. Automated Research Workflow
+
+GitHub Actions runs a scheduled workflow designed to retrieve official pricing documents and generate review reports.
+
+**Successful manual test results:**
+
+- Three of three official source documents retrieved.
+- Refresh status report created.
+- Pending pricing review report created.
+- Reports successfully committed to GitHub.
+- Zero candidate pricing changes identified during the test.
+
+This demonstrates automated source collection and reporting, not autonomous verification or approval of new prices.
+
+## Technology Stack
+
+| Technology | Purpose |
+|---|---|
+| Python | Application and research logic |
+| Streamlit | Interactive dashboard |
+| Pandas | Pricing calculations and data processing |
+| Plotly | Interactive visualizations |
+| OpenAI API | RAG answer generation and assisted extraction |
+| GitHub Actions | Scheduled research workflow |
+| GitHub | Version control and project hosting |
+| Streamlit Community Cloud | Public application deployment |
+
+## Demonstration Scenario
+
+A business expects to process 100,000 API requests per month, averaging 1,000 input tokens and 500 output tokens per request.
+
+Using the project's stored pricing snapshot, GPT-5 nano has the lowest estimated monthly token cost among the seven selected models, at $25.
+
+This represents a potential monthly saving of $5 compared with Gemini 2.5 Flash-Lite and $100 compared with GPT-5 mini.
+
+These estimates are based on token costs only and do not establish which model provides the best overall business value.
+
+## Research Limitations
+
+- The approved pricing dataset is a dated snapshot, not a continuously verified live price feed.
+- Retrieved webpages may contain irrelevant information or ambiguous pricing tables.
+- AI-assisted price extraction can fail to identify rates and requires human review.
+- Scheduled collection does not automatically approve new prices.
+- Only selected text-generation API models are compared.
+- Model quality, response speed, security, context limits, caching, discounts, and other costs may affect procurement decisions.
+- Public API documentation can change, so prices should be rechecked before purchasing.
+
+## Run Locally
+
+Install the dependencies:
 
 ```powershell
 python -m pip install -r requirements.txt
+```
+
+Launch the dashboard:
+
+```powershell
 python -m streamlit run app.py
 ```
 
-Open http://localhost:8501. In the sidebar, enter your **class OpenAI API key** to use RAG and assisted extraction. **Never paste it in GitHub, a public README, or screenshots.** Alternatively, create `.streamlit/secrets.toml` locally from `.streamlit/secrets.toml.example` and replace the placeholder.
+Open `http://localhost:8501` in your browser.
 
-## Five-minute live demo
-1. (0:00–0:40) Stakeholder problem: choosing an affordable LLM API.
-2. (0:40–1:40) Change monthly requests and input/output token counts; compare costs.
-3. (1:40–2:20) Explain potential savings and limitations of cost-only rankings.
-4. (2:20–3:35) Open **Source verification**; fetch official pages, show timestamps and extraction proposals. Do not approve unverified proposals.
-5. (3:35–4:40) Ask **RAG research assistant** a question; show retrieved citations.
-6. (4:40–5:00) Explain scheduled GitHub Action and human approval safeguard.
+An OpenAI API key is required for AI-generated research answers. Store API keys securely using environment variables or Streamlit Secrets. Never commit real keys to GitHub.
 
-## Deploy on Streamlit Community Cloud
-1. Upload the project files (including `.github/workflows/refresh.yml`) to a public GitHub repository. Do **not** upload `.streamlit/secrets.toml` or your API key.
-2. Go to https://share.streamlit.io, choose the repository and `app.py`, and deploy.
-3. Under app settings **Secrets**, add `OPENAI_API_KEY = "your-secret-value"` if you want the professor to demonstrate AI without typing a key. Treat a publicly accessible AI-powered app as potentially billable: set API usage limits, restrict access if possible, or remove the key after grading.
-4. In GitHub repository **Settings → Secrets and variables → Actions**, optionally add `OPENAI_API_KEY` for automated candidate extraction. This is separate from Streamlit secrets.
-5. Submit the deployed `*.streamlit.app` URL and GitHub repository URL. Test in incognito.
+## Live Application
 
-## Research methodology and limitations
-The initial `prices.csv` is a dated **approved research snapshot**, not live data. `verified_date` records the snapshot date. Official webpages can change; fetching alone does not verify numeric rates. The LLM extractor is deliberately conservative and **requires human review** before modifying the approved price table. Scheduled GitHub Actions creates a fresh status/pending-review report, but **does not autonomously publish new approved prices**. This is a deliberate integrity safeguard, not a claim of fully automated verified real-time pricing. On Streamlit Community Cloud, writes to the app filesystem are not reliably persistent; commit approved changes to GitHub for lasting deployment.
+**Dashboard:** https://ai-token-pricing-dashboard.streamlit.app/
 
-The dashboard focuses on comparable public text API token pricing. NVIDIA and Apple are not directly ranked because comparable first-party general-purpose text-token API prices are not established. Cost-only comparisons do not assess model quality, speed, latency, privacy, long-context pricing, caching, tool fees, discounts, taxes, or availability. Rates should be checked against official pages before the presentation.
+**Source code:** https://github.com/jonathonglee/ai-token-pricing-dashboard
 
-Official pages: https://developers.openai.com/api/docs/pricing · https://ai.google.dev/gemini-api/docs/pricing · https://platform.claude.com/docs/en/about-claude/pricing
+## Conclusion
 
-## Files
-- `app.py` — Streamlit UI
-- `research.py` — document retrieval, RAG, candidate extraction and approval
-- `prices.csv` — dated pricing snapshot
-- `scheduled_refresh.py` — scheduled fetch and pending review report
-- `.github/workflows/refresh.yml` — daily scheduled research
-- `.streamlit/secrets.toml.example` — safe template, not a real key
+This project demonstrates how interactive analytics, retrieval-augmented generation, and automated source collection can support AI procurement decisions. By combining cost calculations with research evidence and human review, the dashboard helps businesses explore AI model pricing while maintaining transparency about data reliability and research limitations.
