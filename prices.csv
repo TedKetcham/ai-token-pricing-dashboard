@@ -1,0 +1,8 @@
+provider,model,input_per_m,output_per_m,source_url,verified_date,notes
+OpenAI,GPT-5 mini,0.25,2.00,https://developers.openai.com/api/docs/models/gpt-5-mini,2026-10-19,Standard text pricing; model marked deprecated in documentation
+OpenAI,GPT-5 nano,0.05,0.40,https://openai.com/index/introducing-gpt-5-for-developers/,2026-10-19,Standard text pricing
+Google,Gemini 2.5 Flash,0.30,2.50,https://ai.google.dev/gemini-api/docs/pricing,2026-10-19,Standard paid tier text; thinking output included
+Google,Gemini 2.5 Flash-Lite,0.10,0.40,https://ai.google.dev/gemini-api/docs/pricing,2026-10-19,Standard paid tier text
+Anthropic,Claude Sonnet 5,2.00,10.00,https://platform.claude.com/docs/en/about-claude/pricing,2026-10-19,Standard global pricing
+Anthropic,Claude Sonnet 4.6,3.00,15.00,https://platform.claude.com/docs/en/about-claude/pricing,2026-10-19,Standard global pricing
+Anthropic,Claude Haiku 4.5,1.00,5.00,https://platform.claude.com/docs/en/about-claude/pricing,2026-10-19,Standard global pricing
