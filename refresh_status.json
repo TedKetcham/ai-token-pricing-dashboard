@@ -2,19 +2,19 @@
   {
     "provider": "OpenAI",
     "url": "https://developers.openai.com/api/docs/pricing",
-    "fetched_at_utc": "2026-10-19T23:48:26.390417+00:00",
+    "fetched_at_utc": "2026-10-20T17:00:59.854813+00:00",
     "status": "ok"
   },
   {
     "provider": "Google",
     "url": "https://ai.google.dev/gemini-api/docs/pricing",
-    "fetched_at_utc": "2026-10-19T23:48:26.879859+00:00",
+    "fetched_at_utc": "2026-10-20T17:01:00.607144+00:00",
     "status": "ok"
   },
   {
     "provider": "Anthropic",
     "url": "https://platform.claude.com/docs/en/about-claude/pricing",
-    "fetched_at_utc": "2026-10-19T23:48:27.461804+00:00",
+    "fetched_at_utc": "2026-10-20T17:01:01.697323+00:00",
     "status": "ok"
   }
 ]
