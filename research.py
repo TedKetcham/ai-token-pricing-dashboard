@@ -162,7 +162,7 @@ def answer_question(question, docs, df, api_key, model='gpt-4o'):
     return answer, snippets
 
 def propose_updates(api_key, docs, df):
-    """Extract candidate numbers from official pages; do NOT automatically overwrite approved prices."""
+    """Extract candidate numbers from official pages using full DOM context."""
     from openai import OpenAI
     client = OpenAI(api_key=api_key, timeout=55)
     proposals = []
@@ -178,18 +178,14 @@ def propose_updates(api_key, docs, df):
             name = row['model']
             page = doc['text']
             
-            # Look for model location or fall back to full page context
-            idx = page.lower().find(name.lower())
-            if idx >= 0:
-                context = page[max(0, idx - 350):idx + 3500]
-            else:
-                context = page[:35000]  # Send first 35k chars if exact name isn't matched
+            # Pass full rendered page text (up to 50k chars) to preserve table headers
+            context = page[:50000]
             
             prompt = {
-                'model': name,
+                'model_to_find': name,
                 'provider': provider,
                 'page_excerpt': context,
-                'task': f'Extract standard text input and output cost per 1M tokens for "{name}" or its closest official variant.'
+                'task': f'Extract standard text input and output USD rates per 1M tokens for model "{name}".'
             }
             
             try:
@@ -199,12 +195,13 @@ def propose_updates(api_key, docs, df):
                         {
                             'role': 'system',
                             'content': (
-                                'You are an expert AI pricing analyst. Extract standard paid text input '
+                                'You are an AI procurement pricing analyst. Extract standard paid text input '
                                 'and output USD rates per 1M tokens for the requested model or its closest variant '
-                                '(e.g., match "Claude Sonnet" to "Claude 3.5 Sonnet", "GPT-5 mini" to "GPT-4o mini"). '
-                                'Ignore batch, caching, priority, and free tiers. '
-                                'Output ONLY a raw JSON object with keys: input_per_m, output_per_m, evidence_quote. '
-                                'If no matching model pricing is present, return null for numeric values.'
+                                '(e.g. match "GPT-5 mini" to "gpt-5-mini" or "GPT-4o mini", "Claude Sonnet" to "Claude 3.5 Sonnet"). '
+                                'Ignore batch, caching, audio, and free tiers. '
+                                'Output ONLY a raw JSON object with keys: '
+                                '{"input_per_m": float_or_null, "output_per_m": float_or_null, "evidence_quote": "string"}. '
+                                'If no matching model pricing is present, set input_per_m and output_per_m to null.'
                             )
                         },
                         {'role': 'user', 'content': json.dumps(prompt)}
@@ -234,7 +231,6 @@ def propose_updates(api_key, docs, df):
                 errors.append(f'{name}: extraction failed: {e}')
                 
     return proposals, errors
-
 
 def approve_updates(proposals):
     df = pd.read_csv(DATA)
