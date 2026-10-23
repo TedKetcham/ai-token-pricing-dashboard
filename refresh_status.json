@@ -1,7 +1,7 @@
 [
   {
     "provider": "OpenAI",
-    "url": "https://developers.openai.com/api/docs/pricing",
+    "url": "https://developers.openai.com/api/docs/pricing?latest-pricing-expanded=true",
     "fetched_at_utc": "2026-10-22T17:08:51.891484+00:00",
     "status": "ok"
   },
