@@ -26,38 +26,49 @@ SOURCES = {
 }
 
 async def _fetch_with_playwright(url):
-    """Fetch URL using Playwright and click all dropdowns/collapsibles to expose hidden pricing."""
+    """Fetch URL using Playwright and expand details, accordions, and tabs to expose all model pricing."""
     from playwright.async_api import async_playwright
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
         page = await browser.new_page()
         
-        # Navigate and wait for DOM content to load
+        # Navigate and wait for initial DOM content
         await page.goto(url, wait_until="domcontentloaded", timeout=60000)
-        await page.wait_for_timeout(3000)  # Let initial scripts execute
+        await page.wait_for_timeout(3000)  # Allow JS scripts to run
         
-        # 1. Expand standard HTML <details> summary tags
+        # 1. Force open all native HTML <details> containers
         await page.evaluate("""() => {
             document.querySelectorAll('details').forEach(detail => detail.open = true);
         }""")
         
-        # 2. Click common dynamic UI triggers (buttons, accordions, tab controls)
+        # 2. Click all dynamic tab triggers, accordions, and dropdown toggles
         try:
-            triggers = page.locator("button[aria-expanded='false'], summary, [data-state='closed'], .accordion-header")
+            # Added [role='tab'], tab buttons, and dynamic toggles to selector
+            selectors = (
+                "button[aria-expanded='false'], "
+                "summary, "
+                "[role='tab'], "
+                "[data-state='closed'], "
+                ".accordion-header, "
+                ".tab-button"
+            )
+            triggers = page.locator(selectors)
             count = await triggers.count()
-            for i in range(min(count, 25)):  # Cap clicks to avoid infinite loops
+            
+            # Click tabs and collapsibles to force rendering hidden tab panels into DOM
+            for i in range(min(count, 35)):
                 try:
-                    await triggers.nth(i).click(timeout=1000)
-                    await page.wait_for_timeout(300)
+                    await triggers.nth(i).click(timeout=1200)
+                    await page.wait_for_timeout(250)
                 except Exception:
                     pass
         except Exception:
             pass
 
-        # Wait briefly for opened content/tables to render
+        # Brief pause for rendered tables to populate
         await page.wait_for_timeout(2000)
         
-        # Extract full rendered page innerText
+        # Extract full rendered page text
         text = await page.evaluate("() => document.body.innerText")
         await browser.close()
         return text
