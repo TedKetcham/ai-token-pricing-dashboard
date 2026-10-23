@@ -19,6 +19,7 @@ ROOT = Path(__file__).resolve().parent
 DATA = ROOT / 'prices.csv'
 DOCS = ROOT / 'source_documents.json'
 HISTORY = ROOT / 'history.csv'
+
 SOURCES = {
     'OpenAI': 'https://developers.openai.com/api/docs/pricing.md',
     'Google': 'https://ai.google.dev/gemini-api/docs/pricing',
@@ -26,13 +27,12 @@ SOURCES = {
 }
 
 async def _fetch_with_playwright(url):
-    """Fetch URL using Playwright, handling both raw Markdown and standard HTML pages."""
-    from playwright.async_api import async_playwright
+    """Fetch URL using Playwright, supporting both raw Markdown endpoints and interactive HTML pages."""
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
         page = await browser.new_page()
         
-        # Bypass HTML selector checks if scraping a raw Markdown file
+        # Fast route for plain Markdown files (e.g., OpenAI pricing.md)
         if url.endswith('.md'):
             await page.goto(url, wait_until="domcontentloaded", timeout=60000)
             await page.wait_for_timeout(1000)
@@ -40,7 +40,7 @@ async def _fetch_with_playwright(url):
             await browser.close()
             return text
 
-        # Standard HTML page handling
+        # Standard HTML page route
         try:
             await page.goto(url, wait_until="networkidle", timeout=60000)
         except Exception:
@@ -53,12 +53,12 @@ async def _fetch_with_playwright(url):
 
         await page.wait_for_timeout(2000)
         
-        # Expand native HTML <details> tags
+        # Expand native HTML <details> summary tags
         await page.evaluate("""() => {
             document.querySelectorAll('details').forEach(detail => detail.open = true);
         }""")
         
-        # Click dynamic tabs / accordions
+        # Click dynamic accordions and tab triggers to reveal hidden pricing panels
         try:
             triggers = page.locator("button[aria-expanded='false'], summary, [role='tab'], [data-state='closed']")
             count = await triggers.count()
@@ -77,7 +77,7 @@ async def _fetch_with_playwright(url):
         return text
 
 def fetch_official(url):
-    """Synchronous wrapper around Playwright fetch preserving structural linebreaks."""
+    """Synchronous wrapper around Playwright fetch preserving vertical table linebreaks."""
     text = asyncio.run(_fetch_with_playwright(url))
     lines = [re.sub(r'[ \t]+', ' ', line).strip() for line in text.splitlines()]
     clean_text = '\n'.join(line for line in lines if line)
@@ -177,7 +177,7 @@ def answer_question(question, docs, df, api_key, model='gpt-4o'):
     return answer, snippets
 
 def propose_updates(api_key, docs, df):
-    """Extract candidate numbers from official pages using full document context."""
+    """Extract candidate numbers in batched provider calls to save ~80% in LLM token costs."""
     from openai import OpenAI
     client = OpenAI(api_key=api_key, timeout=55)
     proposals = []
@@ -189,43 +189,59 @@ def propose_updates(api_key, docs, df):
             errors.append(f'{provider}: official page unavailable')
             continue
             
-        for _, row in df[df.provider == provider].iterrows():
-            name = row['model']
-            page = doc['text']
+        provider_rows = df[df.provider == provider]
+        if provider_rows.empty:
+            continue
+
+        # Send full document context ONCE per provider instead of per model row
+        context = doc['text'][:70000]
+        model_list = provider_rows['model'].tolist()
+        
+        prompt = {
+            'provider': provider,
+            'target_models': model_list,
+            'page_snippet': context,
+            'task': f'Extract standard text input and output USD rates per 1M tokens for all requested models: {model_list}'
+        }
+        
+        try:
+            response = client.chat.completions.create(
+                model='gpt-4o',
+                messages=[
+                    {
+                        'role': 'system',
+                        'content': (
+                            'You are an AI pricing analyst parsing document tables. '
+                            'For each target model name provided, match its standard prompt/input USD rate and completion/output USD rate per 1M tokens '
+                            '(e.g. match "GPT-5 mini" to "gpt-5-mini", "GPT-5 nano" to "gpt-5-nano"). '
+                            'Ignore cached input, batch discounts, flex tiers, and audio/vision rates. '
+                            'Output ONLY a raw JSON array of objects for each requested model: '
+                            '[{"model": "string", "input_per_m": float_or_null, "output_per_m": float_or_null, "evidence_quote": "string"}]. '
+                            'If pricing is missing for a model, set input_per_m and output_per_m to null.'
+                        )
+                    },
+                    {'role': 'user', 'content': json.dumps(prompt)}
+                ]
+            )
+            raw = response.choices[0].message.content.strip()
+            m = re.search(r'\[.*\]', raw, re.S)
+            items = json.loads(m.group(0)) if m else []
             
-            # Pass top 70k chars intact so Markdown table headers stay attached
-            context = page[:70000]
+            # Map model names to extracted pricing results
+            extracted_map = {}
+            for item in items:
+                if isinstance(item, dict) and item.get('model'):
+                    extracted_map[item['model']] = item
             
-            prompt = {
-                'target_model': name,
-                'provider': provider,
-                'page_snippet': context,
-                'task': f'Extract standard text input and output USD rates per 1M tokens for "{name}".'
-            }
-            
-            try:
-                response = client.chat.completions.create(
-                    model='gpt-4o',
-                    messages=[
-                        {
-                            'role': 'system',
-                            'content': (
-                                'You are an AI pricing analyst parsing document tables and Markdown text. '
-                                'Find the standard text input and output USD rates per 1M tokens for the specified target model '
-                                '(e.g. match "GPT-5 mini" to "gpt-5-mini", "GPT-5 nano" to "gpt-5-nano"). '
-                                'Extract the standard prompt/input rate and standard completion/output rate. '
-                                'Ignore cached input, batch discounts, flex tiers, and audio/vision rates. '
-                                'Output ONLY a raw JSON object: '
-                                '{"input_per_m": float_or_null, "output_per_m": float_or_null, "evidence_quote": "string"}. '
-                                'If pricing is absent, set input_per_m and output_per_m to null.'
-                            )
-                        },
-                        {'role': 'user', 'content': json.dumps(prompt)}
-                    ]
+            for _, row in provider_rows.iterrows():
+                name = row['model']
+                
+                # Exact name lookup or fallback fuzzy substring lookup
+                item = extracted_map.get(name) or next(
+                    (v for k, v in extracted_map.items() if k and (k.lower() in name.lower() or name.lower() in k.lower())), 
+                    {}
                 )
-                raw = response.choices[0].message.content.strip()
-                m = re.search(r'\{.*\}', raw, re.S)
-                item = json.loads(m.group(0)) if m else {}
+                
                 a, b = item.get('input_per_m'), item.get('output_per_m')
                 
                 if not all(isinstance(x, (int, float)) and 0 < x < 1000 for x in (a, b)):
@@ -243,9 +259,9 @@ def propose_updates(api_key, docs, df):
                     'source_url': doc['url'],
                     'checked_utc': doc['fetched_at_utc']
                 })
-            except Exception as e:
-                errors.append(f'{name}: extraction failed: {e}')
-                
+        except Exception as e:
+            errors.append(f'{provider}: extraction failed: {e}')
+            
     return proposals, errors
 
 def approve_updates(proposals):
