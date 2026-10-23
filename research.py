@@ -6,6 +6,15 @@ from pathlib import Path
 import pandas as pd
 from playwright.async_api import async_playwright
 
+import sys
+import subprocess
+
+# Ensure Playwright browser binaries exist on Streamlit Cloud
+try:
+    subprocess.run([sys.executable, "-m", "playwright", "install", "chromium"], check=True)
+except Exception as e:
+    print(f"Playwright browser installation failed: {e}")
+
 ROOT = Path(__file__).resolve().parent
 DATA = ROOT / 'prices.csv'
 DOCS = ROOT / 'source_documents.json'
