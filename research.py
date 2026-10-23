@@ -26,33 +26,39 @@ SOURCES = {
 }
 
 async def _fetch_with_playwright(url):
-    """Playwright rendering layer that clicks open drop-downs before capturing DOM text."""
+    """Fetch URL using Playwright and click all dropdowns/collapsibles to expose hidden pricing."""
+    from playwright.async_api import async_playwright
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
         page = await browser.new_page()
         
-        await page.goto(url, wait_until="domcontentloaded", timeout=30000)
-        await page.wait_for_timeout(2500)
-
-        # Find and click interactive drop-down buttons / toggles
-        selectors = [
-            "button:has-text('All models')",
-            "button:has-text('Show more')",
-            "[data-state='closed']",
-            "select"
-        ]
-
-        for selector in selectors:
-            elements = await page.query_selector_all(selector)
-            for el in elements:
+        # Navigate and wait for DOM content to load
+        await page.goto(url, wait_until="domcontentloaded", timeout=60000)
+        await page.wait_for_timeout(3000)  # Let initial scripts execute
+        
+        # 1. Expand standard HTML <details> summary tags
+        await page.evaluate("""() => {
+            document.querySelectorAll('details').forEach(detail => detail.open = true);
+        }""")
+        
+        # 2. Click common dynamic UI triggers (buttons, accordions, tab controls)
+        try:
+            triggers = page.locator("button[aria-expanded='false'], summary, [data-state='closed'], .accordion-header")
+            count = await triggers.count()
+            for i in range(min(count, 25)):  # Cap clicks to avoid infinite loops
                 try:
-                    if await el.is_visible():
-                        await el.click()
-                        await page.wait_for_timeout(300)
+                    await triggers.nth(i).click(timeout=1000)
+                    await page.wait_for_timeout(300)
                 except Exception:
                     pass
+        except Exception:
+            pass
 
-        text = await page.inner_text("body")
+        # Wait briefly for opened content/tables to render
+        await page.wait_for_timeout(2000)
+        
+        # Extract full rendered page innerText
+        text = await page.evaluate("() => document.body.innerText")
         await browser.close()
         return text
 
