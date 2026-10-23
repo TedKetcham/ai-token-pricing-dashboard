@@ -26,32 +26,39 @@ SOURCES = {
 }
 
 async def _fetch_with_playwright(url):
-    """Fetch URL using Playwright, wait for JS rendering, and expose all model pricing."""
+    """Fetch URL using Playwright, handling both raw Markdown and standard HTML pages."""
     from playwright.async_api import async_playwright
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
         page = await browser.new_page()
         
-        # Navigate and wait until network connections idle (JS components finish fetching pricing data)
+        # Bypass HTML selector checks if scraping a raw Markdown file
+        if url.endswith('.md'):
+            await page.goto(url, wait_until="domcontentloaded", timeout=60000)
+            await page.wait_for_timeout(1000)
+            text = await page.evaluate("() => document.body.innerText")
+            await browser.close()
+            return text
+
+        # Standard HTML page handling
         try:
             await page.goto(url, wait_until="networkidle", timeout=60000)
         except Exception:
             await page.goto(url, wait_until="domcontentloaded", timeout=60000)
             
-        # Wait specifically for pricing tables or main content containers to render
         try:
             await page.wait_for_selector("table, [role='table'], td, main", timeout=10000)
         except Exception:
             pass
 
-        await page.wait_for_timeout(3000)
+        await page.wait_for_timeout(2000)
         
-        # Expand native HTML <details> summary tags
+        # Expand native HTML <details> tags
         await page.evaluate("""() => {
             document.querySelectorAll('details').forEach(detail => detail.open = true);
         }""")
         
-        # Click dynamic tabs / accordions to render sub-panels into DOM
+        # Click dynamic tabs / accordions
         try:
             triggers = page.locator("button[aria-expanded='false'], summary, [role='tab'], [data-state='closed']")
             count = await triggers.count()
@@ -65,15 +72,6 @@ async def _fetch_with_playwright(url):
             pass
 
         await page.wait_for_timeout(2000)
-        
-        # Extract full rendered page innerText
-        text = await page.evaluate("() => document.body.innerText")
-        await browser.close()
-        return text
-        # Brief pause for rendered tables to populate
-        await page.wait_for_timeout(2000)
-        
-        # Extract full rendered page text
         text = await page.evaluate("() => document.body.innerText")
         await browser.close()
         return text
@@ -81,13 +79,12 @@ async def _fetch_with_playwright(url):
 def fetch_official(url):
     """Synchronous wrapper around Playwright fetch preserving structural linebreaks."""
     text = asyncio.run(_fetch_with_playwright(url))
-    # Clean up duplicate horizontal spaces while keeping vertical line breaks
     lines = [re.sub(r'[ \t]+', ' ', line).strip() for line in text.splitlines()]
     clean_text = '\n'.join(line for line in lines if line)
     if len(clean_text) < 500:
         raise ValueError('Source returned insufficient readable text; do not trust extraction.')
     return clean_text[:120000]
-    
+
 def collect_documents():
     results = []
     for provider, url in SOURCES.items():
@@ -180,7 +177,7 @@ def answer_question(question, docs, df, api_key, model='gpt-4o'):
     return answer, snippets
 
 def propose_updates(api_key, docs, df):
-    """Extract candidate numbers from official pages using targeted table context."""
+    """Extract candidate numbers from official pages using full document context."""
     from openai import OpenAI
     client = OpenAI(api_key=api_key, timeout=55)
     proposals = []
@@ -196,17 +193,8 @@ def propose_updates(api_key, docs, df):
             name = row['model']
             page = doc['text']
             
-            # Locate model name or variant (e.g., 'gpt-5-mini', 'GPT-5 mini') in the text
-            clean_name = name.lower().replace(' ', r'[\s\-_]?')
-            match = re.search(clean_name, page, re.IGNORECASE)
-            
-            if match:
-                # Capture 3,000 chars before and 5,000 chars after the match to keep full table headers
-                start = max(0, match.start() - 3000)
-                end = min(len(page), match.end() + 5000)
-                context = page[start:end]
-            else:
-                context = page[:60000]
+            # Pass top 70k chars intact so Markdown table headers stay attached
+            context = page[:70000]
             
             prompt = {
                 'target_model': name,
@@ -222,7 +210,7 @@ def propose_updates(api_key, docs, df):
                         {
                             'role': 'system',
                             'content': (
-                                'You are an AI pricing analyst parsing formatted document tables. '
+                                'You are an AI pricing analyst parsing document tables and Markdown text. '
                                 'Find the standard text input and output USD rates per 1M tokens for the specified target model '
                                 '(e.g. match "GPT-5 mini" to "gpt-5-mini", "GPT-5 nano" to "gpt-5-nano"). '
                                 'Extract the standard prompt/input rate and standard completion/output rate. '
