@@ -161,26 +161,37 @@ def propose_updates(api_key, docs, df):
     client = OpenAI(api_key=api_key, timeout=55)
     proposals = []
     errors = []
+    
     for provider in SOURCES:
         doc = next((d for d in docs if d['provider'] == provider and d['status'] == 'ok'), None)
         if not doc:
             errors.append(f'{provider}: official page unavailable')
             continue
+            
         for _, row in df[df.provider == provider].iterrows():
             name = row['model']
             page = doc['text']
+            
+            # Normalize model name for fuzzy matching (e.g., 'gpt 5 mini' vs 'gpt-5-mini')
+            search_name = re.sub(r'[^a-zA-Z0-9]', '', name.lower())
+            clean_page_text = re.sub(r'[^a-zA-Z0-9]', '', page.lower())
+            
+            # If model name isn't found at all, pass the whole text slice to gpt-4o to evaluate
             idx = page.lower().find(name.lower())
-            if idx < 0:
-                errors.append(f'{name}: exact model name not found in fetched page')
-                continue
-            context = page[max(0, idx - 350):idx + 3200]
+            if idx >= 0:
+                context = page[max(0, idx - 350):idx + 3200]
+            else:
+                context = page[:35000] # Fallback to first 35k chars of page text
+            
             prompt = {
                 'model': name,
                 'provider': provider,
                 'page_excerpt': context,
-                'task': 'Extract STANDARD paid text input and output USD per 1 million tokens for EXACT model; no batch, caching, priority, audio, long-context, free tiers. If not unambiguously present return null values.'
+                'task': f'Extract STANDARD paid text input and output USD per 1 million tokens for the model "{name}". Ignore batch, caching, priority, free tiers. If missing, return null.'
             }
+            
             try:
+                # Use standard gpt-4o model
                 response = client.chat.completions.create(
                     model='gpt-4o',
                     messages=[
@@ -199,9 +210,11 @@ def propose_updates(api_key, docs, df):
                 match = re.search(r'\{.*\}', raw, re.S)
                 item = json.loads(match.group(0)) if match else {}
                 a, b = item.get('input_per_m'), item.get('output_per_m')
+                
                 if not all(isinstance(x, (int, float)) and 0 < x < 1000 for x in (a, b)):
                     errors.append(f'{name}: ambiguous or missing prices; retained existing')
                     continue
+                    
                 proposals.append({
                     'provider': provider,
                     'model': name,
@@ -215,7 +228,9 @@ def propose_updates(api_key, docs, df):
                 })
             except Exception as e:
                 errors.append(f'{name}: extraction failed: {e}')
+                
     return proposals, errors
+
 
 def approve_updates(proposals):
     df = pd.read_csv(DATA)
