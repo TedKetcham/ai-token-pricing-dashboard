@@ -74,13 +74,15 @@ async def _fetch_with_playwright(url):
         return text
 
 def fetch_official(url):
-    """Synchronous wrapper around Playwright fetch."""
+    """Synchronous wrapper around Playwright fetch preserving structural linebreaks."""
     text = asyncio.run(_fetch_with_playwright(url))
-    clean_text = ' '.join(text.split())
+    # Clean up duplicate horizontal spaces while keeping vertical line breaks
+    lines = [re.sub(r'[ \t]+', ' ', line).strip() for line in text.splitlines()]
+    clean_text = '\n'.join(line for line in lines if line)
     if len(clean_text) < 500:
         raise ValueError('Source returned insufficient readable text; do not trust extraction.')
-    return clean_text[:85000]
-
+    return clean_text[:120000]
+    
 def collect_documents():
     results = []
     for provider, url in SOURCES.items():
@@ -173,7 +175,7 @@ def answer_question(question, docs, df, api_key, model='gpt-4o'):
     return answer, snippets
 
 def propose_updates(api_key, docs, df):
-    """Extract candidate numbers from official pages using full DOM context."""
+    """Extract candidate numbers from official pages using targeted table context."""
     from openai import OpenAI
     client = OpenAI(api_key=api_key, timeout=55)
     proposals = []
@@ -189,14 +191,23 @@ def propose_updates(api_key, docs, df):
             name = row['model']
             page = doc['text']
             
-            # Pass full rendered page text (up to 50k chars) to preserve table headers
-            context = page[:50000]
+            # Locate model name or variant (e.g., 'gpt-5-mini', 'GPT-5 mini') in the text
+            clean_name = name.lower().replace(' ', r'[\s\-_]?')
+            match = re.search(clean_name, page, re.IGNORECASE)
+            
+            if match:
+                # Capture 3,000 chars before and 5,000 chars after the match to keep full table headers
+                start = max(0, match.start() - 3000)
+                end = min(len(page), match.end() + 5000)
+                context = page[start:end]
+            else:
+                context = page[:60000]
             
             prompt = {
-                'model_to_find': name,
+                'target_model': name,
                 'provider': provider,
-                'page_excerpt': context,
-                'task': f'Extract standard text input and output USD rates per 1M tokens for model "{name}".'
+                'page_snippet': context,
+                'task': f'Extract standard text input and output USD rates per 1M tokens for "{name}".'
             }
             
             try:
@@ -206,21 +217,22 @@ def propose_updates(api_key, docs, df):
                         {
                             'role': 'system',
                             'content': (
-                                'You are an AI procurement pricing analyst. Extract standard paid text input '
-                                'and output USD rates per 1M tokens for the requested model or its closest variant '
-                                '(e.g. match "GPT-5 mini" to "gpt-5-mini" or "GPT-4o mini", "Claude Sonnet" to "Claude 3.5 Sonnet"). '
-                                'Ignore batch, caching, audio, and free tiers. '
-                                'Output ONLY a raw JSON object with keys: '
+                                'You are an AI pricing analyst parsing formatted document tables. '
+                                'Find the standard text input and output USD rates per 1M tokens for the specified target model '
+                                '(e.g. match "GPT-5 mini" to "gpt-5-mini", "GPT-5 nano" to "gpt-5-nano"). '
+                                'Extract the standard prompt/input rate and standard completion/output rate. '
+                                'Ignore cached input, batch discounts, flex tiers, and audio/vision rates. '
+                                'Output ONLY a raw JSON object: '
                                 '{"input_per_m": float_or_null, "output_per_m": float_or_null, "evidence_quote": "string"}. '
-                                'If no matching model pricing is present, set input_per_m and output_per_m to null.'
+                                'If pricing is absent, set input_per_m and output_per_m to null.'
                             )
                         },
                         {'role': 'user', 'content': json.dumps(prompt)}
                     ]
                 )
                 raw = response.choices[0].message.content.strip()
-                match = re.search(r'\{.*\}', raw, re.S)
-                item = json.loads(match.group(0)) if match else {}
+                m = re.search(r'\{.*\}', raw, re.S)
+                item = json.loads(m.group(0)) if m else {}
                 a, b = item.get('input_per_m'), item.get('output_per_m')
                 
                 if not all(isinstance(x, (int, float)) and 0 < x < 1000 for x in (a, b)):
