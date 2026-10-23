@@ -20,51 +20,56 @@ DATA = ROOT / 'prices.csv'
 DOCS = ROOT / 'source_documents.json'
 HISTORY = ROOT / 'history.csv'
 SOURCES = {
-    'OpenAI': 'https://developers.openai.com/api/docs/pricing?latest-pricing-expanded=true',
+    'OpenAI': 'https://developers.openai.com/api/docs/pricing.md',
     'Google': 'https://ai.google.dev/gemini-api/docs/pricing',
     'Anthropic': 'https://platform.claude.com/docs/en/about-claude/pricing',
 }
 
 async def _fetch_with_playwright(url):
-    """Fetch URL using Playwright and expand details, accordions, and tabs to expose all model pricing."""
+    """Fetch URL using Playwright, wait for JS rendering, and expose all model pricing."""
     from playwright.async_api import async_playwright
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
         page = await browser.new_page()
         
-        # Navigate and wait for initial DOM content
-        await page.goto(url, wait_until="domcontentloaded", timeout=60000)
-        await page.wait_for_timeout(3000)  # Allow JS scripts to run
+        # Navigate and wait until network connections idle (JS components finish fetching pricing data)
+        try:
+            await page.goto(url, wait_until="networkidle", timeout=60000)
+        except Exception:
+            await page.goto(url, wait_until="domcontentloaded", timeout=60000)
+            
+        # Wait specifically for pricing tables or main content containers to render
+        try:
+            await page.wait_for_selector("table, [role='table'], td, main", timeout=10000)
+        except Exception:
+            pass
+
+        await page.wait_for_timeout(3000)
         
-        # 1. Force open all native HTML <details> containers
+        # Expand native HTML <details> summary tags
         await page.evaluate("""() => {
             document.querySelectorAll('details').forEach(detail => detail.open = true);
         }""")
         
-        # 2. Click all dynamic tab triggers, accordions, and dropdown toggles
+        # Click dynamic tabs / accordions to render sub-panels into DOM
         try:
-            # Added [role='tab'], tab buttons, and dynamic toggles to selector
-            selectors = (
-                "button[aria-expanded='false'], "
-                "summary, "
-                "[role='tab'], "
-                "[data-state='closed'], "
-                ".accordion-header, "
-                ".tab-button"
-            )
-            triggers = page.locator(selectors)
+            triggers = page.locator("button[aria-expanded='false'], summary, [role='tab'], [data-state='closed']")
             count = await triggers.count()
-            
-            # Click tabs and collapsibles to force rendering hidden tab panels into DOM
             for i in range(min(count, 35)):
                 try:
-                    await triggers.nth(i).click(timeout=1200)
-                    await page.wait_for_timeout(250)
+                    await triggers.nth(i).click(timeout=800)
+                    await page.wait_for_timeout(200)
                 except Exception:
                     pass
         except Exception:
             pass
 
+        await page.wait_for_timeout(2000)
+        
+        # Extract full rendered page innerText
+        text = await page.evaluate("() => document.body.innerText")
+        await browser.close()
+        return text
         # Brief pause for rendered tables to populate
         await page.wait_for_timeout(2000)
         
