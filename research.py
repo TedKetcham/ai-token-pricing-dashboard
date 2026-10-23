@@ -20,7 +20,7 @@ DATA = ROOT / 'prices.csv'
 DOCS = ROOT / 'source_documents.json'
 HISTORY = ROOT / 'history.csv'
 SOURCES = {
-    'OpenAI': 'https://developers.openai.com/api/docs/pricing',
+    'OpenAI': 'https://developers.openai.com/api/docs/pricing?latest-pricing-expanded=true',
     'Google': 'https://ai.google.dev/gemini-api/docs/pricing',
     'Anthropic': 'https://platform.claude.com/docs/en/about-claude/pricing',
 }
